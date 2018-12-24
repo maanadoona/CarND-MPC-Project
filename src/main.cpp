@@ -9,6 +9,8 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "MPC.h"
 
+using namespace std;
+
 // for convenience
 using json = nlohmann::json;
 
@@ -98,8 +100,61 @@ int main() {
           * Both are in between [-1, 1].
           *
           */
+          double delta = j[1]["steering_angle"];
+          double acceleration = j[1]["throttle"];
+
+          size_t n_waypoints = ptsx.size();
+          auto ptsx_transformed = Eigen::VectorXd(n_waypoints);
+          auto ptsy_transformed = Eigen::VectorXd(n_waypoints);
+          for (unsigned int i = 0; i < n_waypoints; i++ ) {
+            double dX = ptsx[i] - px;
+            double dY = ptsy[i] - py;
+            double minus_psi = 0.0 - psi;
+            ptsx_transformed( i ) = dX * cos( minus_psi ) - dY * sin( minus_psi );
+            ptsy_transformed( i ) = dX * sin( minus_psi ) + dY * cos( minus_psi );
+          }
+
+          auto coeffs = polyfit(ptsx_transformed, ptsy_transformed, 3);
+
+          //Incorporate latency into the model. time_lapse is 100ms or 0.1sec.
+          double delay = 0.1;
+
+          // Initial state.
+          const double x0 = 0;
+          const double y0 = 0;
+          const double psi0 = 0;
+          const double cte0 = coeffs[0];
+          const double epsi0 = -atan(coeffs[1]);
+
+          // State after delay.
+          double x_delay = x0 + ( v * cos(psi0) * delay );
+          double y_delay = y0 + ( v * sin(psi0) * delay );
+          double psi_delay = psi0 - ( v * delta * delay / mpc.Lf );
+          double v_delay = v + acceleration * delay;
+          double cte_delay = cte0 + ( v * sin(epsi0) * delay );
+          double epsi_delay = epsi0 - ( v * atan(coeffs[1]) * delay / mpc.Lf );
+
+
+          //Calculate cte and epsi. cte is the horizontal line
+          //double cte = polyeval(coeffs, x_delay) - y_delay;
+          //double epsi = psi_delay -atan(coeffs[1]);
+
+          //Create the state vector
+          Eigen::VectorXd state(6);
+          state << x_delay, y_delay, psi_delay, v_delay, cte_delay, epsi_delay;
+
+          //Placeholder for solution returned by optimizer
+          std::vector<double> solution;
           double steer_value;
           double throttle_value;
+
+          //Call the solver and set the steering angle to delta and throttle to a for current
+          //time step solved by MPC
+          solution = mpc.Solve(state, coeffs);
+
+          steer_value = -1.0 * solution[0]/deg2rad(25);
+          throttle_value = solution[1];
+
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -107,9 +162,18 @@ int main() {
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
 
-          //Display the MPC predicted trajectory 
+          //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
+
+          for (unsigned int i = 2; i < solution.size(); i++) {
+            if (i % 2 == 0) {
+              mpc_x_vals.push_back(solution[i]);
+            } else {
+              mpc_y_vals.push_back(solution[i]);
+            }
+          }
+
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
@@ -120,6 +184,11 @@ int main() {
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
+          
+          for (int i = 0; i < ptsx_transformed.size(); i++) {
+            next_x_vals.push_back(ptsx_transformed[i]);
+            next_y_vals.push_back(ptsy_transformed[i]);
+          }
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
