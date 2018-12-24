@@ -2,7 +2,7 @@
 Self-Driving Car Engineer Nanodegree Program
 
 [image0]: ./images/DynamicModel.png
-[image1]: ./images/GlobalKineticModel.png
+[image1]: ./images/GlobalKinematicModel.png
 [image2]: ./images/ModelPredictiveControl.png
 
 ## Project Goal
