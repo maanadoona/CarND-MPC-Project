@@ -101,47 +101,49 @@ int main() {
           *
           */
           double delta = j[1]["steering_angle"];
-          double acceleration = j[1]["throttle"];
+          double a = j[1]["throttle"];
 
+          /* Fit the polynomial to the waypoints */
           size_t n_waypoints = ptsx.size();
-          auto ptsx_transformed = Eigen::VectorXd(n_waypoints);
-          auto ptsy_transformed = Eigen::VectorXd(n_waypoints);
-          for (unsigned int i = 0; i < n_waypoints; i++ ) {
+          auto ptsx_vehicle = Eigen::VectorXd(n_waypoints);
+          auto ptsy_vehicle = Eigen::VectorXd(n_waypoints);
+          for (unsigned int i = 0; i < n_waypoints; i++ )
+          {
             double dX = ptsx[i] - px;
             double dY = ptsy[i] - py;
-            double minus_psi = 0.0 - psi;
-            ptsx_transformed( i ) = dX * cos( minus_psi ) - dY * sin( minus_psi );
-            ptsy_transformed( i ) = dX * sin( minus_psi ) + dY * cos( minus_psi );
+            double minus_psi = -psi;
+            ptsx_vehicle[i] = dX * cos( minus_psi ) - dY * sin( minus_psi );
+            ptsy_vehicle[i] = dX * sin( minus_psi ) + dY * cos( minus_psi );
           }
 
-          auto coeffs = polyfit(ptsx_transformed, ptsy_transformed, 3);
+          Eigen::VectorXd coeffs = polyfit(ptsx_vehicle, ptsy_vehicle, 3);
 
-          //Incorporate latency into the model. time_lapse is 100ms or 0.1sec.
-          double delay = 0.1;
+          /* Calculate initial cross track error and orientation error values */
+
+          /* Latency : 100ms */
+          double latency = 0.1;
 
           // Initial state.
-          const double x0 = 0;
-          const double y0 = 0;
-          const double psi0 = 0;
-          const double cte0 = coeffs[0];
-          const double epsi0 = -atan(coeffs[1]);
+          double x_cur = px;
+          double y_cur = py;
+          double psi_cur = psi;
+          double cte_cur = polyeval(coeffs, 0);
+          double epsi_cur = -atan(coeffs[1]);
 
           // State after delay.
-          double x_delay = x0 + ( v * cos(psi0) * delay );
-          double y_delay = y0 + ( v * sin(psi0) * delay );
-          double psi_delay = psi0 - ( v * delta * delay / mpc.Lf );
-          double v_delay = v + acceleration * delay;
-          double cte_delay = cte0 + ( v * sin(epsi0) * delay );
-          double epsi_delay = epsi0 - ( v * atan(coeffs[1]) * delay / mpc.Lf );
+          double x_next = x_cur + ( v * cos(psi_cur) * latency );
+          double y_next = y_cur + ( v * sin(psi_cur) * latency );
+          double psi_next = psi_cur + ( v / mpc.Lf) * delta * latency;
+          double v_next = v + a * latency;
+          double cte_next = cte_cur + ( v * sin(epsi_cur) * latency );
+          double epsi_next = epsi_cur + ( v / mpc.Lf ) * delta * latency;
 
-
-          //Calculate cte and epsi. cte is the horizontal line
-          //double cte = polyeval(coeffs, x_delay) - y_delay;
-          //double epsi = psi_delay -atan(coeffs[1]);
 
           //Create the state vector
           Eigen::VectorXd state(6);
-          state << x_delay, y_delay, psi_delay, v_delay, cte_delay, epsi_delay;
+          //state << x_next, y_next, psi_next, v_next, cte_next, epsi_next;
+          //state << 0, 0, 0, v, cte_cur, epsi_cur;
+          state << 0, 0, 0, v_next, cte_next, epsi_next;
 
           //Placeholder for solution returned by optimizer
           std::vector<double> solution;
@@ -174,7 +176,6 @@ int main() {
             }
           }
 
-
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
 
@@ -185,9 +186,9 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
           
-          for (int i = 0; i < ptsx_transformed.size(); i++) {
-            next_x_vals.push_back(ptsx_transformed[i]);
-            next_y_vals.push_back(ptsy_transformed[i]);
+          for (int i = 0; i < ptsx_vehicle.size(); i++) {
+            next_x_vals.push_back(ptsx_vehicle[i]);
+            next_y_vals.push_back(ptsy_vehicle[i]);
           }
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
